@@ -1,0 +1,53 @@
+
+# One-hot encode 'Residue'
+encoder = OneHotEncoder(sparse_output=False)  # Updated argument
+residue_encoded = encoder.fit_transform(data[['Residue']])
+
+# Prepare features and target
+features = np.hstack([residue_encoded, data[['Residue ID', 'position', 'weights_collection']].values])
+target = data['B Factor']
+
+# Normalize features and target
+scaler = StandardScaler()
+features_scaled = scaler.fit_transform(features)
+target_scaled = (target - target.mean()) / target.std()  # Standardize target
+
+# Split the data
+X_train, X_test, y_train, y_test = train_test_split(features_scaled, target_scaled, test_size=0.2, random_state=42)
+
+# Hyperparameter Tuning using Keras Tuner
+class MyHyperModel(HyperModel):
+    def build(self, hp):
+        model = Sequential()
+        model.add(Dense(
+            hp.Int('units', min_value=32, max_value=512, step=32), 
+            activation='relu', 
+            input_dim=X_train.shape[1])
+        )
+        model.add(BatchNormalization())
+        model.add(Dropout(0.3))
+        model.add(Dense(128, activation='relu'))
+        model.add(BatchNormalization())
+        model.add(Dropout(0.3))
+        model.add(Dense(64, activation='relu'))
+        model.add(Dense(1))
+        
+        model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=hp.Float('lr', min_value=1e-4, max_value=1e-2, sampling='LOG')), loss='mse', metrics=['mae'])
+        
+        return model
+
+# Initialize and search hyperparameters
+tuner = RandomSearch(MyHyperModel(), objective='val_loss', max_trials=5, executions_per_trial=1, directory='my_dir', project_name='b_factor_tuning')
+tuner.search(X_train, y_train, epochs=100, validation_split=0.2, batch_size=64)
+
+# Retrieve the best model
+best_model = tuner.get_best_models(num_models=1)[0]
+
+# Train the model with callbacks for early stopping and learning rate reduction
+callbacks = [
+    EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True),
+    ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5, verbose=1)
+]
+
+history = best_model.fit(X_train, y_train, validation_split=0.2, epochs=100, batch_size=64, 
+                         callbacks=callbacks, verbose=1)
