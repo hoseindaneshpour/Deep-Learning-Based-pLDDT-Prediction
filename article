@@ -1,53 +1,798 @@
+import pandas as pd
+import numpy as np
+import tensorflow as tf
 
-# One-hot encode 'Residue'
-encoder = OneHotEncoder(sparse_output=False)  # Updated argument
-residue_encoded = encoder.fit_transform(data[['Residue']])
+import matplotlib.pyplot as plt
 
-# Prepare features and target
-features = np.hstack([residue_encoded, data[['Residue ID', 'position', 'weights_collection']].values])
-target = data['B Factor']
+from sklearn.model_selection import train_test_split, KFold
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-# Normalize features and target
-scaler = StandardScaler()
-features_scaled = scaler.fit_transform(features)
-target_scaled = (target - target.mean()) / target.std()  # Standardize target
+from sklearn.metrics import (
+    mean_absolute_error,
+    mean_squared_error,
+    r2_score
+)
 
-# Split the data
-X_train, X_test, y_train, y_test = train_test_split(features_scaled, target_scaled, test_size=0.2, random_state=42)
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import (
+    Dense,
+    Dropout,
+    BatchNormalization,
+    GaussianNoise
+)
 
-# Hyperparameter Tuning using Keras Tuner
-class MyHyperModel(HyperModel):
-    def build(self, hp):
-        model = Sequential()
-        model.add(Dense(
-            hp.Int('units', min_value=32, max_value=512, step=32), 
-            activation='relu', 
-            input_dim=X_train.shape[1])
-        )
-        model.add(BatchNormalization())
-        model.add(Dropout(0.3))
-        model.add(Dense(128, activation='relu'))
-        model.add(BatchNormalization())
-        model.add(Dropout(0.3))
-        model.add(Dense(64, activation='relu'))
-        model.add(Dense(1))
-        
-        model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=hp.Float('lr', min_value=1e-4, max_value=1e-2, sampling='LOG')), loss='mse', metrics=['mae'])
-        
-        return model
+from tensorflow.keras.callbacks import (
+    EarlyStopping,
+    ReduceLROnPlateau
+)
 
-# Initialize and search hyperparameters
-tuner = RandomSearch(MyHyperModel(), objective='val_loss', max_trials=5, executions_per_trial=1, directory='my_dir', project_name='b_factor_tuning')
-tuner.search(X_train, y_train, epochs=100, validation_split=0.2, batch_size=64)
+from tensorflow.keras.regularizers import l2
 
-# Retrieve the best model
-best_model = tuner.get_best_models(num_models=1)[0]
 
-# Train the model with callbacks for early stopping and learning rate reduction
-callbacks = [
-    EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True),
-    ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5, verbose=1)
+
+# ======================================================
+# Load data as explained in the data section of the articöe
+# ======================================================
+
+data = pd.read_csv(
+    "file from my innovative dataframe.csv"
+)
+
+
+
+# ======================================================
+# Train/Test split
+# Keep test set completely independent
+# ======================================================
+
+train_data, test_data = train_test_split(
+    data,
+    test_size=0.2,
+    random_state=42
+)
+
+
+
+# ======================================================
+# Separate features and target
+# ======================================================
+
+X_all = train_data[
+    [
+        "Residue",
+        "Residue ID",
+        "position",
+        "weights_collection"
+    ]
 ]
 
-history = best_model.fit(X_train, y_train, validation_split=0.2, epochs=100, batch_size=64, 
-                         callbacks=callbacks, verbose=1)
+
+y_all = train_data[
+    "B Factor"
+].values
+
+
+
+X_test_raw = test_data[
+    [
+        "Residue",
+        "Residue ID",
+        "position",
+        "weights_collection"
+    ]
+]
+
+
+y_test_original = test_data[
+    "B Factor"
+].values
+
+
+
+# ======================================================
+# Model function
+# ======================================================
+
+def create_model(input_dim):
+
+    model = Sequential([
+
+
+        GaussianNoise(
+            0.05,
+            input_shape=(input_dim,)
+        ),
+
+
+
+        Dense(
+            128,
+            activation="relu",
+            kernel_regularizer=l2(0.001)
+        ),
+
+        BatchNormalization(),
+
+        Dropout(0.5),
+
+
+
+        Dense(
+            64,
+            activation="relu",
+            kernel_regularizer=l2(0.001)
+        ),
+
+        BatchNormalization(),
+
+        Dropout(0.4),
+
+
+
+        Dense(
+            32,
+            activation="relu",
+            kernel_regularizer=l2(0.001)
+        ),
+
+        Dropout(0.3),
+
+
+
+        Dense(1)
+
+    ])
+
+
+
+    optimizer = tf.keras.optimizers.AdamW(
+        learning_rate=0.0005,
+        weight_decay=1e-4
+    )
+
+
+
+    model.compile(
+        optimizer=optimizer,
+        loss="mse",
+        metrics=["mae"]
+    )
+
+
+    return model
+
+
+
+
+
+# ======================================================
+# K-Fold Cross Validation
+# ======================================================
+
+kf = KFold(
+    n_splits=5,
+    shuffle=True,
+    random_state=42
+)
+
+
+
+cv_results = []
+
+
+
+for fold, (train_idx, val_idx) in enumerate(
+        kf.split(X_all)):
+
+
+    print("\n====================")
+    print("Fold", fold+1)
+    print("====================")
+
+
+    X_train_fold = X_all.iloc[train_idx]
+    X_val_fold = X_all.iloc[val_idx]
+
+
+    y_train_fold = y_all[train_idx]
+    y_val_fold = y_all[val_idx]
+
+
+
+    # --------------------------
+    # One-hot encoding
+    # --------------------------
+
+    encoder = OneHotEncoder(
+        sparse_output=False,
+        handle_unknown="ignore"
+    )
+
+
+    residue_train = encoder.fit_transform(
+        X_train_fold[["Residue"]]
+    )
+
+
+    residue_val = encoder.transform(
+        X_val_fold[["Residue"]]
+    )
+
+
+
+    X_train_fold = np.hstack(
+        [
+            residue_train,
+            X_train_fold[
+                [
+                    "Residue ID",
+                    "position",
+                    "weights_collection"
+                ]
+            ].values
+        ]
+    )
+
+
+    X_val_fold = np.hstack(
+        [
+            residue_val,
+            X_val_fold[
+                [
+                    "Residue ID",
+                    "position",
+                    "weights_collection"
+                ]
+            ].values
+        ]
+    )
+
+
+
+    # --------------------------
+    # Feature scaling
+    # --------------------------
+
+    scaler = StandardScaler()
+
+
+    X_train_fold = scaler.fit_transform(
+        X_train_fold
+    )
+
+
+    X_val_fold = scaler.transform(
+        X_val_fold
+    )
+
+
+
+    # --------------------------
+    # Target scaling
+    # --------------------------
+
+    y_mean = y_train_fold.mean()
+
+    y_std = y_train_fold.std()
+
+
+
+    y_train_scaled = (
+        y_train_fold-y_mean
+    )/y_std
+
+
+
+    y_val_scaled = (
+        y_val_fold-y_mean
+    )/y_std
+
+
+
+
+    # --------------------------
+    # Model
+    # --------------------------
+
+    model = create_model(
+        X_train_fold.shape[1]
+    )
+
+
+
+    callbacks = [
+
+        EarlyStopping(
+            monitor="val_loss",
+            patience=15,
+            restore_best_weights=True
+        ),
+
+
+        ReduceLROnPlateau(
+            monitor="val_loss",
+            factor=0.3,
+            patience=5,
+            min_lr=1e-7
+        )
+
+    ]
+
+
+
+    history = model.fit(
+
+        X_train_fold,
+
+        y_train_scaled,
+
+        validation_data=
+        (
+            X_val_fold,
+            y_val_scaled
+        ),
+
+        epochs=300,
+
+        batch_size=32,
+
+        callbacks=callbacks,
+
+        verbose=0
+    )
+
+
+
+
+    # --------------------------
+    # Validation prediction
+    # --------------------------
+
+    prediction = model.predict(
+        X_val_fold,
+        verbose=0
+    )
+
+
+
+    prediction_original = (
+        prediction.flatten()
+        *
+        y_std
+        +
+        y_mean
+    )
+
+
+
+    MAE = mean_absolute_error(
+        y_val_fold,
+        prediction_original
+    )
+
+
+    RMSE = np.sqrt(
+        mean_squared_error(
+            y_val_fold,
+            prediction_original
+        )
+    )
+
+
+    R2 = r2_score(
+        y_val_fold,
+        prediction_original
+    )
+
+
+
+    cv_results.append(
+        [
+            MAE,
+            RMSE,
+            R2
+        ]
+    )
+
+
+
+    print(
+        "MAE:",
+        MAE
+    )
+
+    print(
+        "RMSE:",
+        RMSE
+    )
+
+    print(
+        "R2:",
+        R2
+    )
+
+
+
+
+
+# ======================================================
+# Cross-validation summary
+# ======================================================
+
+cv_results = np.array(
+    cv_results
+)
+
+
+print("\n========================")
+print("5-Fold CV Results")
+print("========================")
+
+
+print(
+    "MAE:",
+    cv_results[:,0].mean(),
+    "+/-",
+    cv_results[:,0].std()
+)
+
+
+print(
+    "RMSE:",
+    cv_results[:,1].mean(),
+    "+/-",
+    cv_results[:,1].std()
+)
+
+
+print(
+    "R2:",
+    cv_results[:,2].mean(),
+    "+/-",
+    cv_results[:,2].std()
+)
+
+
+
+
+
+# ======================================================
+# Train final model on ALL training data
+# ======================================================
+
+
+encoder_final = OneHotEncoder(
+    sparse_output=False,
+    handle_unknown="ignore"
+)
+
+
+res_train_final = encoder_final.fit_transform(
+    X_all[["Residue"]]
+)
+
+
+res_test_final = encoder_final.transform(
+    X_test_raw[["Residue"]]
+)
+
+
+
+X_train_final = np.hstack(
+    [
+        res_train_final,
+        X_all[
+            [
+                "Residue ID",
+                "position",
+                "weights_collection"
+            ]
+        ].values
+    ]
+)
+
+
+
+X_test_final = np.hstack(
+    [
+        res_test_final,
+        X_test_raw[
+            [
+                "Residue ID",
+                "position",
+                "weights_collection"
+            ]
+        ].values
+    ]
+)
+
+
+
+
+scaler_final = StandardScaler()
+
+
+X_train_final = scaler_final.fit_transform(
+    X_train_final
+)
+
+
+X_test_final = scaler_final.transform(
+    X_test_final
+)
+
+
+
+# target scaling
+
+y_mean_final = y_all.mean()
+
+y_std_final = y_all.std()
+
+
+
+y_train_final = (
+    y_all-y_mean_final
+)/y_std_final
+
+
+
+
+# ======================================================
+# Final model
+# ======================================================
+
+final_model = create_model(
+    X_train_final.shape[1]
+)
+
+
+
+callbacks_final = [
+
+    EarlyStopping(
+        monitor="val_loss",
+        patience=15,
+        restore_best_weights=True
+    ),
+
+
+    ReduceLROnPlateau(
+        monitor="val_loss",
+        factor=0.3,
+        patience=5
+    )
+
+]
+
+
+
+history = final_model.fit(
+
+    X_train_final,
+
+    y_train_final,
+
+    validation_split=0.2,
+
+    epochs=300,
+
+    batch_size=32,
+
+    callbacks=callbacks_final,
+
+    verbose=1
+)
+
+
+
+# ======================================================
+# Save model and preprocessing objects
+# ======================================================
+
+import joblib
+
+
+# Save neural network
+final_model.save(
+    "b_factor_model_kfold.h5"
+)
+
+
+# Save residue encoder
+joblib.dump(
+    encoder_final,
+    "residue_encoder_final.pkl"
+)
+
+
+# Save feature scaler
+joblib.dump(
+    scaler_final,
+    "feature_scaler_final.pkl"
+)
+
+
+# Save target inverse-scaling parameters
+joblib.dump(
+    {
+        "mean": y_mean_final,
+        "std": y_std_final
+    },
+    "target_scaler_final.pkl"
+)
+
+
+print("Model and preprocessing objects saved successfully")
+
+# ======================================================
+# Final test evaluation
+# ======================================================
+
+
+test_prediction = final_model.predict(
+    X_test_final
+)
+
+
+
+test_prediction_original = (
+    test_prediction.flatten()
+    *
+    y_std_final
+    +
+    y_mean_final
+)
+
+
+
+MAE = mean_absolute_error(
+    y_test_original,
+    test_prediction_original
+)
+
+
+RMSE = np.sqrt(
+    mean_squared_error(
+        y_test_original,
+        test_prediction_original
+    )
+)
+
+
+R2 = r2_score(
+    y_test_original,
+    test_prediction_original
+)
+
+
+# -----------------------------
+# Correlation metrics
+# -----------------------------
+
+pearson_corr, pearson_p = pearsonr(
+    y_test_original,
+    test_prediction_original
+)
+
+
+spearman_corr, spearman_p = spearmanr(
+    y_test_original,
+    test_prediction_original
+)
+
+
+
+print("\n========================")
+print("Final Test Results")
+print("========================")
+
+
+print(
+    "Test MAE:",
+    MAE
+)
+
+print(
+    "Test RMSE:",
+    RMSE
+)
+
+print(
+    "Test R2:",
+    R2
+)
+
+
+print("Pearson Correlation:", pearson_corr)
+print("Spearman Correlation:", spearman_corr)   
+
+# ======================================================
+# Save model
+# ======================================================
+
+final_model.save(
+    "b_factor_model_kfold.h5"
+)
+
+
+
+
+
+# ======================================================
+# Training curves
+# ======================================================
+
+
+plt.figure(figsize=(12,6))
+
+plt.plot(
+    history.history["loss"],
+    label="Training Loss"
+)
+
+
+plt.plot(
+    history.history["val_loss"],
+    label="Validation Loss"
+)
+
+
+plt.xlabel(
+    "Epoch"
+)
+
+plt.ylabel(
+    "MSE"
+)
+
+plt.title(
+    "Training vs Validation Loss"
+)
+
+
+plt.legend()
+
+plt.grid()
+
+plt.show()
+
+
+
+
+
+plt.figure(figsize=(12,6))
+
+
+plt.plot(
+    history.history["mae"],
+    label="Training MAE"
+)
+
+
+plt.plot(
+    history.history["val_mae"],
+    label="Validation MAE"
+)
+
+
+plt.xlabel(
+    "Epoch"
+)
+
+
+plt.ylabel(
+    "MAE"
+)
+
+
+plt.title(
+    "Training vs Validation MAE"
+)
+
+
+plt.legend()
+
+plt.grid()
+
+plt.show()
