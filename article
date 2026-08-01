@@ -42,7 +42,6 @@ data = pd.read_csv(
 
 # ======================================================
 # Train/Test split
-# Keep test set completely independent
 # ======================================================
 
 train_data, test_data = train_test_split(
@@ -457,7 +456,7 @@ print(
 
 
 # ======================================================
-# Train final model on ALL training data
+# Train final model
 # ======================================================
 
 
