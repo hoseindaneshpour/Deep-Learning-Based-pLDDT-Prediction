@@ -29,7 +29,7 @@ from tensorflow.keras.callbacks import (
 from tensorflow.keras.regularizers import l2
 
 
-
+#  the "B Factor" column in this dataset represents AlphaFold pLDDT values
 # ======================================================
 # Load data as explained in the data section of the article
 # ======================================================
