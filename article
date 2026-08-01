@@ -31,7 +31,7 @@ from tensorflow.keras.regularizers import l2
 
 
 # ======================================================
-# Load data as explained in the data section of the articöe
+# Load data as explained in the data section of the article
 # ======================================================
 
 data = pd.read_csv(
