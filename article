@@ -30,7 +30,7 @@ from tensorflow.keras.regularizers import l2
 
 
 #  the "B Factor" column in this dataset represents AlphaFold pLDDT values
-# ======================================================
+#   
 # Load data as explained in the data section of the article
 # ======================================================
 
@@ -40,9 +40,9 @@ data = pd.read_csv(
 
 
 
-# ======================================================
+# == 
 # Train/Test split
-# ======================================================
+# ================= 
 
 train_data, test_data = train_test_split(
     data,
@@ -52,7 +52,7 @@ train_data, test_data = train_test_split(
 
 
 
-# ======================================================
+#  
 # Separate features and target
 # ======================================================
 
@@ -88,9 +88,9 @@ y_test_original = test_data[
 
 
 
-# ======================================================
+# 
 # Model function
-# ======================================================
+# =========================== 
 
 def create_model(input_dim):
 
@@ -164,9 +164,9 @@ def create_model(input_dim):
 
 
 
-# ======================================================
+#  
 # K-Fold Cross Validation
-# ======================================================
+# ======================== 
 
 kf = KFold(
     n_splits=5,
@@ -248,9 +248,9 @@ for fold, (train_idx, val_idx) in enumerate(
 
 
 
-    # --------------------------
+    # ---------------- 
     # Feature scaling
-    # --------------------------
+    # ---------------- 
 
     scaler = StandardScaler()
 
@@ -266,9 +266,9 @@ for fold, (train_idx, val_idx) in enumerate(
 
 
 
-    # --------------------------
+    # --------------- 
     # Target scaling
-    # --------------------------
+    # ---------------- 
 
     y_mean = y_train_fold.mean()
 
@@ -289,9 +289,9 @@ for fold, (train_idx, val_idx) in enumerate(
 
 
 
-    # --------------------------
+    # ----- 
     # Model
-    # --------------------------
+    # ----- 
 
     model = create_model(
         X_train_fold.shape[1]
@@ -343,9 +343,9 @@ for fold, (train_idx, val_idx) in enumerate(
 
 
 
-    # --------------------------
+    # ---- 
     # Validation prediction
-    # --------------------------
+    # ---------------------- 
 
     prediction = model.predict(
         X_val_fold,
@@ -414,9 +414,9 @@ for fold, (train_idx, val_idx) in enumerate(
 
 
 
-# ======================================================
+#  
 # Cross-validation summary
-# ======================================================
+# =========================== 
 
 cv_results = np.array(
     cv_results
@@ -455,9 +455,9 @@ print(
 
 
 
-# ======================================================
+# == 
 # Train final model
-# ======================================================
+# ================= 
 
 
 encoder_final = OneHotEncoder(
@@ -537,9 +537,9 @@ y_train_final = (
 
 
 
-# ======================================================
+# ===========  
 # Final model
-# ======================================================
+# ============ 
 
 final_model = create_model(
     X_train_final.shape[1]
@@ -585,9 +585,9 @@ history = final_model.fit(
 
 
 
-# ======================================================
+# ==================================== 
 # Save model and preprocessing objects
-# ======================================================
+# ==================================== 
 
 import joblib
 
@@ -624,9 +624,9 @@ joblib.dump(
 
 print("Model and preprocessing objects saved successfully")
 
-# ======================================================
+# ===================== 
 # Final test evaluation
-# ======================================================
+# ====================== 
 
 
 test_prediction = final_model.predict(
@@ -665,7 +665,7 @@ R2 = r2_score(
 )
 
 
-# -----------------------------
+# ---- 
 # Correlation metrics
 # -----------------------------
 
@@ -718,9 +718,9 @@ final_model.save(
 
 
 
-# ======================================================
+# =============== 
 # Training curves
-# ======================================================
+# ================  
 
 
 plt.figure(figsize=(12,6))
